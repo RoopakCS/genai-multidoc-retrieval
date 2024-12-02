@@ -6,92 +6,91 @@ To design and implement a multidocument retrieval agent using LlamaIndex (former
 The objective is to create an agent that can handle multiple research articles or documents and retrieve relevant information based on user queries. By leveraging LlamaIndex, we aim to build an efficient retrieval system that can access multiple documents, extract the necessary data, and synthesize it into meaningful responses, improving the speed and accuracy of information retrieval.
 
 ## DESIGN STEPS:
-### STEP 1: Set Up the Environment
- - Install the necessary Python packages: LlamaIndex (GPT Index), openai, and any other dependencies (e.g., requests, pdfplumber for PDF parsing).
- - Obtain the OpenAI API key (or other model keys for retrieval).
-```bash
-%pip install llama-index-agent-openai
-%pip install llama-index-embeddings-openai
-%pip install llama-index-llms-openai
-!pip install llama-index
-```
-### STEP 2: Data Ingestion and Indexing
- - Collect the research articles or documents in a structured format (PDF, Word, or plain text).
- - Use LlamaIndex to create an index for the documents, which will allow for efficient retrieval of information.
- - If the documents are in PDF format, use a PDF parsing library (e.g., pdfplumber or PyMuPDF) to extract text.
-### STEP 3: Build the Retrieval Agent
- - Implement the agent that will:
- - Load and index the documents using LlamaIndex.
- - Accept a user query.
- - Retrieve the most relevant sections from the documents based on the query.
- - Synthesize the responses and generate a concise answer.
-### STEP 4: Testing and Evaluation
- - Create various queries that test the agent's ability to extract and synthesize information from multiple documents.
- - Measure the performance by evaluating the relevance, accuracy, and conciseness of the retrieved answers.
+### **Algorithm for PDF Analysis and Query Processing Using Agent Tools**
+### **1. Input Initialization**
+- **Inputs**:
+  - `urls`: A list of URLs pointing to the research papers (optional for download).
+  - `papers`: Local filenames of the PDF files.
+- **Output**:
+  - Tools for each paper (`vector_tool` and `summary_tool`).
+
+### **2. Set Up Document Processing Tools**
+1. Import the `get_doc_tools` function for generating document-specific tools.
+2. Iterate over the `papers` list:
+   - Print the current paper being processed.
+   - For each paper, call `get_doc_tools` with:
+     - The paper file path.
+     - The stem of the file path (used as an identifier).
+   - Store the generated tools (`vector_tool` and `summary_tool`) in a dictionary, mapping to the paper.
+
+### **3. Initialize Tools**
+1. Combine all tools from the dictionary into a single list (`initial_tools`).
+
+### **4. Set Up the LLM**
+1. Import and initialize the `OpenAI` LLM:
+   - Use the `gpt-4` model.
+
+### **5. Configure the Agent Worker**
+1. Import `FunctionCallingAgentWorker` and `AgentRunner` to manage agent functionalities.
+2. Create an agent worker using `FunctionCallingAgentWorker.from_tools`:
+   - Pass the combined `initial_tools` list.
+   - Set the LLM (`llm`).
+   - Enable verbose output for detailed logging.
+
+### **6. Run the Agent Query**
+1. Create an `AgentRunner` instance with the configured worker.
+2. Query the agent with a question:
+   - Include specific queries about datasets and results from the `LongLoRA` paper.
+
+### **7. Output the Result**
+1. Retrieve and display the response from the agent.
 
 ## PROGRAM:
 ```python
-from llama_index.core import (
-    VectorStoreIndex,
-    SimpleKeywordTableIndex,
-    SimpleDirectoryReader,
-)
-from llama_index.core import SummaryIndex
-from llama_index.core.schema import IndexNode
-from llama_index.core.tools import QueryEngineTool, ToolMetadata
-from llama_index.llms.openai import OpenAI
-from llama_index.core.callbacks import CallbackManager
+urls = [
+    "https://openreview.net/pdf?id=VtmBAGCN7o",
+    "https://openreview.net/pdf?id=6PmJoRfdaK",
+    "https://openreview.net/pdf?id=hSyW5go0v8",
+]
+
+papers = [
+    "metagpt.pdf",
+    "longlora.pdf",
+    "selfrag.pdf",
+]
+
+from utils import get_doc_tools
 from pathlib import Path
-import requests
-for title in wiki_titles:
-    response = requests.get(
-        "https://en.wikipedia.org/w/api.php",
-        params={
-            "action": "query",
-            "format": "json",
-            "titles": title,
-            "prop": "extracts",
-            # 'exintro': True,
-            "explaintext": True,
-        },
-    ).json()
-    page = next(iter(response["query"]["pages"].values()))
-    wiki_text = page["extract"]
 
-    data_path = Path("data")
-    if not data_path.exists():
-        Path.mkdir(data_path)
+paper_to_tools_dict = {}
+for paper in papers:
+    print(f"Getting tools for paper: {paper}")
+    vector_tool, summary_tool = get_doc_tools(paper, Path(paper).stem)
+    paper_to_tools_dict[paper] = [vector_tool, summary_tool]
 
-    with open(data_path / f"{title}.txt", "w") as fp:
-        fp.write(wiki_text)
+initial_tools = [t for paper in papers for t in paper_to_tools_dict[paper]]
 
-# Load all wiki documents
-city_docs = {}
-for wiki_title in wiki_titles:
-    city_docs[wiki_title] = SimpleDirectoryReader(
-        input_files=[f"data/{wiki_title}.txt"]
-    ).load_data()
+from llama_index.llms.openai import OpenAI
+llm = OpenAI(model="gpt-4")
 
-import os
-os.environ["OPENAI_API_KEY"] = "your-api-key"
+from llama_index.core.agent import FunctionCallingAgentWorker
+from llama_index.core.agent import AgentRunner
 
-from llama_index.agent.openai import OpenAIAgent
-
-top_agent = OpenAIAgent.from_tools(
-    tool_retriever=obj_index.as_retriever(similarity_top_k=3),
-    system_prompt=""" \
-You are an agent designed to answer queries about a set of given cities.
-Please always use the tools provided to answer a question. Do not rely on prior knowledge.\
-
-""",
-    verbose=True,
+agent_worker = FunctionCallingAgentWorker.from_tools(
+    initial_tools, 
+    llm=llm, 
+    verbose=True
 )
-# should use Boston agent -> vector tool
-response = top_agent.query("Tell me about the arts and culture in Boston")
+
+agent = AgentRunner(agent_worker)
+response = agent.query(
+    "Tell me about the evaluation dataset used in LongLoRA, "
+    "and then tell me about the evaluation results"
+)
 ```
 
 ## OUTPUT:
-![alt text](Image.png)
+![alt text](Output.png)
 
 ## RESULT:
 Prompt Handling: The program constructs a query dynamically and feeds it into the LlamaIndex.
